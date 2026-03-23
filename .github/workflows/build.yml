@@ -1,0 +1,35 @@
+name: Build Laravel Vendor
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Unzip project
+      run: unzip cheapsmm-FIXED-PRODUCTION.zip
+
+    - name: Setup PHP 8.2
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+        extensions: mbstring, bcmath, curl, openssl, zip
+
+    - name: Install dependencies
+      run: |
+        cd cheapsmm-panel-PRODUCTION-READY
+        composer install --no-dev --optimize-autoloader
+
+    - name: Zip final project
+      run: |
+        cd cheapsmm-panel-PRODUCTION-READY
+        zip -r ../project-with-vendor.zip .
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: project-with-vendor
+        path: project-with-vendor.zip
