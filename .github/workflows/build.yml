@@ -1,20 +1,20 @@
-name: Build Laravel Vendor
+name: Build and Deploy Laravel
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - claude/debug-issues-QDoed
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Unzip project
-      run: unzip cheapsmm-FIXED-PRODUCTION 2.zip
-
-    - name: List files
-      run: ls -R
+      run: unzip "cheapsmm-FIXED-PRODUCTION 2.zip" -d cheapsmm-panel-PRODUCTION-READY
 
     - name: Setup PHP 8.2
       uses: shivammathur/setup-php@v2
@@ -36,3 +36,80 @@ jobs:
       with:
         name: project-with-vendor
         path: project-with-vendor.zip
+
+    - name: Upload zip via cPanel API
+      run: |
+        curl -sk \
+          -u "${{ secrets.SSH_USERNAME }}:${{ secrets.CPANEL_PASSWORD }}" \
+          -F "dir=/home/${{ secrets.SSH_USERNAME }}/" \
+          -F "file-1=@project-with-vendor.zip" \
+          -F "overwrite=1" \
+          "https://${{ secrets.SSH_HOST }}:2083/execute/Fileman/upload_files" \
+          | python3 -m json.tool
+
+    - name: Deploy via PHP script (no SSH shell needed)
+      env:
+        SSH_HOST: ${{ secrets.SSH_HOST }}
+        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        CPANEL_PASSWORD: ${{ secrets.CPANEL_PASSWORD }}
+      run: |
+        # Generate a one-time deploy token
+        DEPLOY_TOKEN=$(openssl rand -hex 32)
+
+        # Substitute placeholders into the PHP deploy script
+        sed \
+          -e "s|__DEPLOY_TOKEN__|${DEPLOY_TOKEN}|g" \
+          -e "s|__USERNAME__|${SSH_USERNAME}|g" \
+          -e "s|__DOMAIN__|cheapsmm.fun|g" \
+          -e "s|__DB_DATABASE__|cheapsmm_smm|g" \
+          -e "s|__DB_USERNAME__|cheapsmm_smm|g" \
+          -e "s|__DB_PASSWORD__|cheapsmm_smm|g" \
+          .github/deploy_script.php > /tmp/deploy.php
+
+        # Upload PHP deploy script to public_html
+        echo "=== Uploading deploy script ==="
+        curl -sk \
+          -u "${SSH_USERNAME}:${CPANEL_PASSWORD}" \
+          -F "dir=/home/${SSH_USERNAME}/public_html/" \
+          -F "file-1=@/tmp/deploy.php" \
+          -F "overwrite=1" \
+          "https://${SSH_HOST}:2083/execute/Fileman/upload_files" \
+          | python3 -m json.tool
+
+        # Run the deploy script via HTTP
+        echo "=== Running deploy script ==="
+        sleep 3
+
+        # -L follows redirects (www. redirect etc), -w shows HTTP status
+        HTTP_CODE=$(curl -skL --max-time 300 \
+          -o /tmp/deploy_result.txt \
+          -w "%{http_code}" \
+          "https://cheapsmm.fun/deploy.php?t=${DEPLOY_TOKEN}")
+        RESULT=$(cat /tmp/deploy_result.txt)
+        echo "HTTP status: $HTTP_CODE"
+        echo "$RESULT"
+
+        # Always read error_log for diagnostics
+        echo "=== public_html/error_log ==="
+        curl -sk \
+          -u "${SSH_USERNAME}:${CPANEL_PASSWORD}" \
+          "https://${SSH_HOST}:2083/execute/Fileman/get_file_content?dir=/home/${SSH_USERNAME}/public_html/&file=error_log" \
+          | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('content','(empty)'))" 2>/dev/null || true
+
+        # If HTTP response was empty, try to read the log file via cPanel
+        if [ -z "$RESULT" ]; then
+          echo "=== HTTP response empty - reading deploy.log via cPanel ==="
+          RESULT=$(curl -sk \
+            -u "${SSH_USERNAME}:${CPANEL_PASSWORD}" \
+            "https://${SSH_HOST}:2083/execute/Fileman/get_file_content?dir=/home/${SSH_USERNAME}/&file=deploy.log" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('content','(log empty)'))" 2>/dev/null || echo "(could not read log)")
+          echo "$RESULT"
+        fi
+
+        # Check for success marker
+        if echo "$RESULT" | grep -q "Deployment complete"; then
+          echo "=== Deployment successful! ==="
+        else
+          echo "=== Deployment FAILED - check output above ==="
+          exit 1
+        fi
