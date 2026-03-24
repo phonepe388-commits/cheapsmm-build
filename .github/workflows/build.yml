@@ -2,6 +2,9 @@ name: Build and Deploy Laravel
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - claude/debug-issues-QDoed
 
 jobs:
   build-and-deploy:
