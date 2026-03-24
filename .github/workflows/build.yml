@@ -47,65 +47,45 @@ jobs:
           "https://${{ secrets.SSH_HOST }}:2083/execute/Fileman/upload_files" \
           | python3 -m json.tool
 
-    - name: Extract and deploy on server
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SSH_HOST }}
-        username: ${{ secrets.SSH_USERNAME }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 22
-        script: |
-          set -xe
-          echo "=== Starting deployment ==="
-          cd /home/cheapsmm
+    - name: Deploy via PHP script (no SSH shell needed)
+      env:
+        SSH_HOST: ${{ secrets.SSH_HOST }}
+        SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        CPANEL_PASSWORD: ${{ secrets.CPANEL_PASSWORD }}
+      run: |
+        # Generate a one-time deploy token
+        DEPLOY_TOKEN=$(openssl rand -hex 32)
 
-          # Extract project
-          rm -rf /home/cheapsmm/laravel-app-new
-          mkdir -p /home/cheapsmm/laravel-app-new
-          echo "Extracting zip..."
-          unzip -o /home/cheapsmm/project-with-vendor.zip -d /home/cheapsmm/laravel-app-new
-          echo "=== Extracted files ==="
-          ls /home/cheapsmm/laravel-app-new
+        # Substitute placeholders into the PHP deploy script
+        sed \
+          -e "s|__DEPLOY_TOKEN__|${DEPLOY_TOKEN}|g" \
+          -e "s|__USERNAME__|${SSH_USERNAME}|g" \
+          -e "s|__DOMAIN__|cheapsmm.fun|g" \
+          -e "s|__DB_DATABASE__|cheapsmm_smm|g" \
+          -e "s|__DB_USERNAME__|cheapsmm_smm|g" \
+          -e "s|__DB_PASSWORD__|cheapsmm_smm|g" \
+          .github/deploy_script.php > /tmp/deploy.php
 
-          # Move to final location
-          rm -rf /home/cheapsmm/laravel-app
-          mv /home/cheapsmm/laravel-app-new /home/cheapsmm/laravel-app
+        # Upload PHP deploy script to public_html
+        echo "=== Uploading deploy script ==="
+        curl -sk \
+          -u "${SSH_USERNAME}:${CPANEL_PASSWORD}" \
+          -F "dir=/home/${SSH_USERNAME}/public_html/" \
+          -F "file-1=@/tmp/deploy.php" \
+          -F "overwrite=1" \
+          "https://${SSH_HOST}:2083/execute/Fileman/upload_files" \
+          | python3 -m json.tool
 
-          # Check public dir exists
-          echo "=== Laravel public dir ==="
-          ls /home/cheapsmm/laravel-app/public
+        # Run the deploy script via HTTP
+        echo "=== Running deploy script ==="
+        sleep 3
+        RESULT=$(curl -sk --max-time 120 "https://cheapsmm.fun/deploy.php?t=${DEPLOY_TOKEN}")
+        echo "$RESULT"
 
-          # Setup .env
-          cp /home/cheapsmm/laravel-app/.env.example /home/cheapsmm/laravel-app/.env
-          sed -i "s|APP_URL=.*|APP_URL=https://cheapsmm.fun|g" /home/cheapsmm/laravel-app/.env
-          sed -i "s|APP_ENV=.*|APP_ENV=production|g" /home/cheapsmm/laravel-app/.env
-          sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|g" /home/cheapsmm/laravel-app/.env
-          sed -i "s|DB_DATABASE=.*|DB_DATABASE=cheapsmm_smm|g" /home/cheapsmm/laravel-app/.env
-          sed -i "s|DB_USERNAME=.*|DB_USERNAME=cheapsmm_smm|g" /home/cheapsmm/laravel-app/.env
-          sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=cheapsmm_smm|g" /home/cheapsmm/laravel-app/.env
-          sed -i "s|DB_HOST=.*|DB_HOST=localhost|g" /home/cheapsmm/laravel-app/.env
-          sed -i "s|SESSION_DOMAIN=.*|SESSION_DOMAIN=cheapsmm.fun|g" /home/cheapsmm/laravel-app/.env
-          php /home/cheapsmm/laravel-app/artisan key:generate --force
-
-          # Permissions
-          find /home/cheapsmm/laravel-app -type f -exec chmod 644 {} \;
-          find /home/cheapsmm/laravel-app -type d -exec chmod 755 {} \;
-          chmod -R 777 /home/cheapsmm/laravel-app/storage /home/cheapsmm/laravel-app/bootstrap/cache
-
-          # Setup public_html - preserve directory to keep cPanel PHP handler settings
-          find /home/cheapsmm/public_html -mindepth 1 -delete 2>/dev/null || true
-          cp -rv /home/cheapsmm/laravel-app/public/. /home/cheapsmm/public_html/
-
-          # Fix index.php paths (replace all __DIR__ relative paths with absolute)
-          sed -i "s|__DIR__.'/../storage|'/home/cheapsmm/laravel-app/storage|g" /home/cheapsmm/public_html/index.php
-          sed -i "s|__DIR__.'/../vendor|'/home/cheapsmm/laravel-app/vendor|g" /home/cheapsmm/public_html/index.php
-          sed -i "s|__DIR__.'/../bootstrap|'/home/cheapsmm/laravel-app/bootstrap|g" /home/cheapsmm/public_html/index.php
-
-          echo "=== public_html contents ==="
-          ls -la /home/cheapsmm/public_html
-
-          echo "=== index.php full content ==="
-          cat /home/cheapsmm/public_html/index.php
-
-          rm -f /home/cheapsmm/project-with-vendor.zip
-          echo "=== DONE ==="
+        # Check for success marker
+        if echo "$RESULT" | grep -q "Deployment complete"; then
+          echo "=== Deployment successful! ==="
+        else
+          echo "=== Deployment FAILED - check output above ==="
+          exit 1
+        fi
