@@ -51,60 +51,57 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         port: 22
         script: |
+          set -xe
           echo "=== Starting deployment ==="
+          cd /home/cheapsmm
 
           # Extract project
-          rm -rf ~/laravel-app-new
-          mkdir -p ~/laravel-app-new
+          rm -rf /home/cheapsmm/laravel-app-new
+          mkdir -p /home/cheapsmm/laravel-app-new
           echo "Extracting zip..."
-          unzip -o ~/project-with-vendor.zip -d ~/laravel-app-new
-          echo "Extraction done. Files:"
-          ls ~/laravel-app-new | head -20
+          unzip -o /home/cheapsmm/project-with-vendor.zip -d /home/cheapsmm/laravel-app-new
+          echo "=== Extracted files ==="
+          ls /home/cheapsmm/laravel-app-new
 
           # Move to final location
-          rm -rf ~/laravel-app
-          mv ~/laravel-app-new ~/laravel-app
-          echo "Moved to laravel-app"
+          rm -rf /home/cheapsmm/laravel-app
+          mv /home/cheapsmm/laravel-app-new /home/cheapsmm/laravel-app
 
-          # Setup .env for cheapsmm.fun
-          cd ~/laravel-app
-          cp .env.example .env
-          sed -i "s|APP_URL=.*|APP_URL=https://cheapsmm.fun|g" .env
-          sed -i "s|APP_ENV=.*|APP_ENV=production|g" .env
-          sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|g" .env
-          sed -i "s|SESSION_DOMAIN=.*|SESSION_DOMAIN=cheapsmm.fun|g" .env
-          sed -i "s|DB_DATABASE=.*|DB_DATABASE=cheapsmm_smm|g" .env
-          sed -i "s|DB_USERNAME=.*|DB_USERNAME=cheapsmm_smm|g" .env
-          sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=cheapsmm_smm|g" .env
-          sed -i "s|DB_HOST=.*|DB_HOST=localhost|g" .env
-          php artisan key:generate --force
-          echo ".env configured"
+          # Check public dir exists
+          echo "=== Laravel public dir ==="
+          ls /home/cheapsmm/laravel-app/public
 
-          # Set permissions
-          find ~/laravel-app -type f -exec chmod 644 {} \;
-          find ~/laravel-app -type d -exec chmod 755 {} \;
-          chmod -R 777 ~/laravel-app/storage ~/laravel-app/bootstrap/cache
-          echo "Permissions set"
+          # Setup .env
+          cp /home/cheapsmm/laravel-app/.env.example /home/cheapsmm/laravel-app/.env
+          sed -i "s|APP_URL=.*|APP_URL=https://cheapsmm.fun|g" /home/cheapsmm/laravel-app/.env
+          sed -i "s|APP_ENV=.*|APP_ENV=production|g" /home/cheapsmm/laravel-app/.env
+          sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|g" /home/cheapsmm/laravel-app/.env
+          sed -i "s|DB_DATABASE=.*|DB_DATABASE=cheapsmm_smm|g" /home/cheapsmm/laravel-app/.env
+          sed -i "s|DB_USERNAME=.*|DB_USERNAME=cheapsmm_smm|g" /home/cheapsmm/laravel-app/.env
+          sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=cheapsmm_smm|g" /home/cheapsmm/laravel-app/.env
+          sed -i "s|DB_HOST=.*|DB_HOST=localhost|g" /home/cheapsmm/laravel-app/.env
+          sed -i "s|SESSION_DOMAIN=.*|SESSION_DOMAIN=cheapsmm.fun|g" /home/cheapsmm/laravel-app/.env
+          php /home/cheapsmm/laravel-app/artisan key:generate --force
 
-          # Set up public_html with Laravel public files
-          echo "Setting up public_html..."
-          ls ~/laravel-app/public
-          rm -rf ~/public_html
-          mkdir -p ~/public_html
-          cp -r ~/laravel-app/public/. ~/public_html/
-          echo "Copied public files"
+          # Permissions
+          find /home/cheapsmm/laravel-app -type f -exec chmod 644 {} \;
+          find /home/cheapsmm/laravel-app -type d -exec chmod 755 {} \;
+          chmod -R 777 /home/cheapsmm/laravel-app/storage /home/cheapsmm/laravel-app/bootstrap/cache
 
-          # Fix index.php to point to laravel-app
-          sed -i "s|__DIR__.'/../vendor|'/home/cheapsmm/laravel-app/vendor|g" ~/public_html/index.php
-          sed -i "s|__DIR__.'/../bootstrap|'/home/cheapsmm/laravel-app/bootstrap|g" ~/public_html/index.php
-          echo "Fixed index.php paths"
+          # Setup public_html
+          rm -rf /home/cheapsmm/public_html
+          mkdir -p /home/cheapsmm/public_html
+          cp -rv /home/cheapsmm/laravel-app/public/. /home/cheapsmm/public_html/
 
-          # Verify
+          # Fix index.php paths
+          sed -i "s|__DIR__.'/../vendor|'/home/cheapsmm/laravel-app/vendor|g" /home/cheapsmm/public_html/index.php
+          sed -i "s|__DIR__.'/../bootstrap|'/home/cheapsmm/laravel-app/bootstrap|g" /home/cheapsmm/public_html/index.php
+
           echo "=== public_html contents ==="
-          ls ~/public_html
-          echo "=== index.php first 10 lines ==="
-          head -10 ~/public_html/index.php
+          ls -la /home/cheapsmm/public_html
 
-          # Clean up zip
-          rm -f ~/project-with-vendor.zip
-          echo "=== Deployment complete! ==="
+          echo "=== index.php paths ==="
+          grep -n "vendor\|bootstrap" /home/cheapsmm/public_html/index.php
+
+          rm -f /home/cheapsmm/project-with-vendor.zip
+          echo "=== DONE ==="
