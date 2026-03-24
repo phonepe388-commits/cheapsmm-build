@@ -34,15 +34,14 @@ jobs:
         name: project-with-vendor
         path: project-with-vendor.zip
 
-    - name: Upload to server via SCP
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.SSH_HOST }}
-        username: ${{ secrets.SSH_USERNAME }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 22
-        source: project-with-vendor.zip
-        target: /home/cheapsmm/
+    - name: Upload zip via cPanel API
+      run: |
+        curl -sk \
+          -u "${{ secrets.SSH_USERNAME }}:${{ secrets.CPANEL_PASSWORD }}" \
+          -F "dir=/home/${{ secrets.SSH_USERNAME }}/" \
+          -F "file-1=@project-with-vendor.zip" \
+          "https://${{ secrets.SSH_HOST }}:2083/execute/Fileman/upload_files" \
+          | python3 -m json.tool
 
     - name: Extract and deploy on server
       uses: appleboy/ssh-action@v1.0.3
@@ -55,12 +54,7 @@ jobs:
           set -e
           cd /home/cheapsmm
 
-          # Backup existing public_html
-          if [ -d public_html ] && [ "$(ls -A public_html)" ]; then
-            cp -r public_html public_html_backup_$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
-          fi
-
-          # Extract project to temp directory
+          # Extract project
           rm -rf /home/cheapsmm/laravel-app-new
           mkdir -p /home/cheapsmm/laravel-app-new
           unzip -o /home/cheapsmm/project-with-vendor.zip -d /home/cheapsmm/laravel-app-new
@@ -84,11 +78,11 @@ jobs:
           # Run migrations
           php artisan migrate --force 2>/dev/null || echo "Migration skipped"
 
-          # Update public_html to serve Laravel's public folder
+          # Update public_html to serve Laravel public folder
           rm -rf /home/cheapsmm/public_html
           cp -r /home/cheapsmm/laravel-app/public /home/cheapsmm/public_html
 
-          # Fix the index.php paths
+          # Fix index.php paths
           sed -i "s|__DIR__.'/../vendor|'/home/cheapsmm/laravel-app/vendor|g" /home/cheapsmm/public_html/index.php
           sed -i "s|__DIR__.'/../bootstrap|'/home/cheapsmm/laravel-app/bootstrap|g" /home/cheapsmm/public_html/index.php
 
