@@ -89,6 +89,13 @@ jobs:
         echo "HTTP status: $HTTP_CODE"
         echo "$RESULT"
 
+        # Always read error_log for diagnostics
+        echo "=== public_html/error_log ==="
+        curl -sk \
+          -u "${SSH_USERNAME}:${CPANEL_PASSWORD}" \
+          "https://${SSH_HOST}:2083/execute/Fileman/get_file_content?dir=/home/${SSH_USERNAME}/public_html/&file=error_log" \
+          | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('content','(empty)'))" 2>/dev/null || true
+
         # If HTTP response was empty, try to read the log file via cPanel
         if [ -z "$RESULT" ]; then
           echo "=== HTTP response empty - reading deploy.log via cPanel ==="

@@ -5,19 +5,14 @@ if (!isset($_GET['t']) || $_GET['t'] !== '__DEPLOY_TOKEN__') {
     die('Forbidden');
 }
 
-// Lift PHP limits - extraction can be slow on shared hosting
-set_time_limit(300);
-@ini_set('memory_limit', '512M');
-
-// Force real-time output (bypass LiteSpeed/nginx buffering)
-@ini_set('zlib.output_compression', 0);
-@ini_set('output_buffering', 0);
-while (ob_get_level()) { ob_end_clean(); }
-ob_implicit_flush(true);
-
-// Show PHP errors so we can debug
-error_reporting(E_ALL);
-@ini_set('display_errors', '1');
+// Safely call functions that may be in disable_functions on shared hosting
+// (calling a disabled function causes Fatal Error even with @ prefix)
+$_df = array_map('trim', explode(',', ini_get('disable_functions')));
+if (!in_array('set_time_limit', $_df)) set_time_limit(300);
+if (!in_array('ini_set', $_df)) {
+    ini_set('memory_limit', '512M');
+    ini_set('display_errors', '1');
+}
 
 $home       = '/home/__USERNAME__';
 $zipFile    = "$home/project-with-vendor.zip";
