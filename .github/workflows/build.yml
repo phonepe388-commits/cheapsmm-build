@@ -73,6 +73,10 @@ jobs:
           sed -i "s|APP_ENV=.*|APP_ENV=production|g" .env
           sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|g" .env
           sed -i "s|SESSION_DOMAIN=.*|SESSION_DOMAIN=cheapsmm.fun|g" .env
+          sed -i "s|DB_DATABASE=.*|DB_DATABASE=cheapsmm_smm|g" .env
+          sed -i "s|DB_USERNAME=.*|DB_USERNAME=cheapsmm_smm|g" .env
+          sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=cheapsmm_smm|g" .env
+          sed -i "s|DB_HOST=.*|DB_HOST=localhost|g" .env
           php artisan key:generate --force
           echo ".env configured"
 
