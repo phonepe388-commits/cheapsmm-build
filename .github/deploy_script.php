@@ -5,6 +5,10 @@ if (!isset($_GET['t']) || $_GET['t'] !== '__DEPLOY_TOKEN__') {
     die('Forbidden');
 }
 
+// Lift PHP limits - extraction can be slow on shared hosting
+set_time_limit(300);
+@ini_set('memory_limit', '512M');
+
 $home      = '/home/__USERNAME__';
 $zipFile   = "$home/project-with-vendor.zip";
 $newApp    = "$home/laravel-app-new";
@@ -41,13 +45,25 @@ function rchmod($dir, $fm, $dm) {
 try {
     // 1. Extract zip
     echo "Extracting zip...\n"; flush();
-    $zip = new ZipArchive;
-    if ($zip->open($zipFile) !== true) throw new Exception("Cannot open zip: $zipFile");
+    if (!file_exists($zipFile)) throw new Exception("Zip not found: $zipFile");
     rrmdir($newApp);
     mkdir($newApp, 0755, true);
-    $zip->extractTo($newApp);
-    $zip->close();
-    echo "Extracted OK\n"; flush();
+
+    // Try fast exec unzip first, fall back to ZipArchive
+    $disabled = array_map('trim', explode(',', ini_get('disable_functions')));
+    $execOk = function_exists('exec') && !in_array('exec', $disabled);
+    if ($execOk) {
+        exec("unzip -o " . escapeshellarg($zipFile) . " -d " . escapeshellarg($newApp) . " 2>&1", $uzOut, $uzCode);
+        if ($uzCode !== 0) throw new Exception("unzip failed: " . implode("\n", $uzOut));
+        echo "Extracted via unzip OK\n"; flush();
+    } else {
+        $zip = new ZipArchive;
+        $res = $zip->open($zipFile);
+        if ($res !== true) throw new Exception("ZipArchive::open failed with code: $res");
+        if (!$zip->extractTo($newApp)) throw new Exception("ZipArchive::extractTo failed");
+        $zip->close();
+        echo "Extracted via ZipArchive OK\n"; flush();
+    }
 
     // 2. Move to final location
     echo "Moving app...\n"; flush();
@@ -79,8 +95,7 @@ try {
     rchmod("$app/bootstrap/cache", 0777, 0777);
 
     // 5. Try artisan cache commands if exec() is available
-    $disabled = array_map('trim', explode(',', ini_get('disable_functions')));
-    if (function_exists('exec') && !in_array('exec', $disabled)) {
+    if ($execOk) {
         echo "Running artisan optimize...\n"; flush();
         exec("php $app/artisan config:cache 2>&1", $out); echo implode("\n", $out) . "\n"; $out = []; flush();
         exec("php $app/artisan route:cache 2>&1",  $out); echo implode("\n", $out) . "\n"; $out = []; flush();
