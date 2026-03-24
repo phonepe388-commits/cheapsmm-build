@@ -92,20 +92,20 @@ jobs:
           find /home/cheapsmm/laravel-app -type d -exec chmod 755 {} \;
           chmod -R 777 /home/cheapsmm/laravel-app/storage /home/cheapsmm/laravel-app/bootstrap/cache
 
-          # Setup public_html
-          rm -rf /home/cheapsmm/public_html
-          mkdir -p /home/cheapsmm/public_html
+          # Setup public_html - preserve directory to keep cPanel PHP handler settings
+          find /home/cheapsmm/public_html -mindepth 1 -delete 2>/dev/null || true
           cp -rv /home/cheapsmm/laravel-app/public/. /home/cheapsmm/public_html/
 
-          # Fix index.php paths
+          # Fix index.php paths (replace all __DIR__ relative paths with absolute)
+          sed -i "s|__DIR__.'/../storage|'/home/cheapsmm/laravel-app/storage|g" /home/cheapsmm/public_html/index.php
           sed -i "s|__DIR__.'/../vendor|'/home/cheapsmm/laravel-app/vendor|g" /home/cheapsmm/public_html/index.php
           sed -i "s|__DIR__.'/../bootstrap|'/home/cheapsmm/laravel-app/bootstrap|g" /home/cheapsmm/public_html/index.php
 
           echo "=== public_html contents ==="
           ls -la /home/cheapsmm/public_html
 
-          echo "=== index.php paths ==="
-          grep -n "vendor\|bootstrap" /home/cheapsmm/public_html/index.php
+          echo "=== index.php full content ==="
+          cat /home/cheapsmm/public_html/index.php
 
           rm -f /home/cheapsmm/project-with-vendor.zip
           echo "=== DONE ==="
