@@ -1,10 +1,10 @@
-name: Build Laravel Vendor
+name: Build and Deploy Laravel
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -12,9 +12,6 @@ jobs:
 
     - name: Unzip project
       run: unzip "cheapsmm-FIXED-PRODUCTION 2.zip" -d cheapsmm-panel-PRODUCTION-READY
-
-    - name: List files
-      run: ls -R
 
     - name: Setup PHP 8.2
       uses: shivammathur/setup-php@v2
@@ -36,3 +33,66 @@ jobs:
       with:
         name: project-with-vendor
         path: project-with-vendor.zip
+
+    - name: Upload to server via SCP
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        source: project-with-vendor.zip
+        target: /home/cheapsmm/
+
+    - name: Extract and deploy on server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        script: |
+          set -e
+          cd /home/cheapsmm
+
+          # Backup existing public_html
+          if [ -d public_html ] && [ "$(ls -A public_html)" ]; then
+            cp -r public_html public_html_backup_$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+          fi
+
+          # Extract project to temp directory
+          rm -rf /home/cheapsmm/laravel-app-new
+          mkdir -p /home/cheapsmm/laravel-app-new
+          unzip -o /home/cheapsmm/project-with-vendor.zip -d /home/cheapsmm/laravel-app-new
+
+          # Move to final location
+          rm -rf /home/cheapsmm/laravel-app
+          mv /home/cheapsmm/laravel-app-new /home/cheapsmm/laravel-app
+
+          # Setup .env if not exists
+          cd /home/cheapsmm/laravel-app
+          if [ ! -f .env ]; then
+            cp .env.example .env
+            php artisan key:generate --force
+          fi
+
+          # Set permissions
+          find . -type f -exec chmod 644 {} \;
+          find . -type d -exec chmod 755 {} \;
+          chmod -R 777 storage bootstrap/cache
+
+          # Run migrations
+          php artisan migrate --force 2>/dev/null || echo "Migration skipped"
+
+          # Update public_html to serve Laravel's public folder
+          rm -rf /home/cheapsmm/public_html
+          cp -r /home/cheapsmm/laravel-app/public /home/cheapsmm/public_html
+
+          # Fix the index.php paths
+          sed -i "s|__DIR__.'/../vendor|'/home/cheapsmm/laravel-app/vendor|g" /home/cheapsmm/public_html/index.php
+          sed -i "s|__DIR__.'/../bootstrap|'/home/cheapsmm/laravel-app/bootstrap|g" /home/cheapsmm/public_html/index.php
+
+          # Clean up
+          rm -f /home/cheapsmm/project-with-vendor.zip
+
+          echo "Deployment complete!"
