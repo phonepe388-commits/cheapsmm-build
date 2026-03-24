@@ -78,7 +78,7 @@ try {
     $appKey = 'base64:' . base64_encode(random_bytes(32));
     $env = preg_replace('/^APP_URL=.*/m',        'APP_URL=https://__DOMAIN__',         $env);
     $env = preg_replace('/^APP_ENV=.*/m',        'APP_ENV=production',                  $env);
-    $env = preg_replace('/^APP_DEBUG=.*/m',      'APP_DEBUG=false',                     $env);
+    $env = preg_replace('/^APP_DEBUG=.*/m',      'APP_DEBUG=true',                      $env);
     $env = preg_replace('/^APP_KEY=.*/m',        'APP_KEY=' . $appKey,                  $env);
     $env = preg_replace('/^DB_DATABASE=.*/m',    'DB_DATABASE=__DB_DATABASE__',         $env);
     $env = preg_replace('/^DB_USERNAME=.*/m',    'DB_USERNAME=__DB_USERNAME__',         $env);
@@ -94,14 +94,17 @@ try {
     rchmod("$app/storage", 0777, 0777);
     rchmod("$app/bootstrap/cache", 0777, 0777);
 
-    // 5. Try artisan cache commands if exec() is available
+    // 5. Try artisan commands if exec() is available
     if ($execOk) {
+        echo "Running artisan migrate...\n"; flush();
+        exec("php $app/artisan migrate --force 2>&1", $out); echo implode("\n", $out) . "\n"; $out = []; flush();
+
         echo "Running artisan optimize...\n"; flush();
         exec("php $app/artisan config:cache 2>&1", $out); echo implode("\n", $out) . "\n"; $out = []; flush();
         exec("php $app/artisan route:cache 2>&1",  $out); echo implode("\n", $out) . "\n"; $out = []; flush();
         exec("php $app/artisan view:cache 2>&1",   $out); echo implode("\n", $out) . "\n"; $out = []; flush();
     } else {
-        echo "exec() not available - skipping artisan cache (app will still work)\n"; flush();
+        echo "exec() not available - skipping artisan commands (app will still work)\n"; flush();
     }
 
     // 6. Sync public_html (preserve directory, clear contents)
