@@ -43,6 +43,7 @@ jobs:
           -u "${{ secrets.SSH_USERNAME }}:${{ secrets.CPANEL_PASSWORD }}" \
           -F "dir=/home/${{ secrets.SSH_USERNAME }}/" \
           -F "file-1=@project-with-vendor.zip" \
+          -F "overwrite=1" \
           "https://${{ secrets.SSH_HOST }}:2083/execute/Fileman/upload_files" \
           | python3 -m json.tool
 
