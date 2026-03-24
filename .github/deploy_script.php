@@ -9,13 +9,24 @@ if (!isset($_GET['t']) || $_GET['t'] !== '__DEPLOY_TOKEN__') {
 set_time_limit(300);
 @ini_set('memory_limit', '512M');
 
-$home      = '/home/__USERNAME__';
-$zipFile   = "$home/project-with-vendor.zip";
-$newApp    = "$home/laravel-app-new";
-$app       = "$home/laravel-app";
+// Force real-time output (bypass LiteSpeed/nginx buffering)
+@ini_set('zlib.output_compression', 0);
+@ini_set('output_buffering', 0);
+while (ob_get_level()) { ob_end_clean(); }
+ob_implicit_flush(true);
+
+// Show PHP errors so we can debug
+error_reporting(E_ALL);
+@ini_set('display_errors', '1');
+
+$home       = '/home/__USERNAME__';
+$zipFile    = "$home/project-with-vendor.zip";
+$newApp     = "$home/laravel-app-new";
+$app        = "$home/laravel-app";
 $publicHtml = "$home/public_html";
 
 header('Content-Type: text/plain');
+echo "Script started\n"; flush();
 
 function rrmdir($dir) {
     if (!is_dir($dir)) return;
@@ -94,17 +105,23 @@ try {
     rchmod("$app/storage", 0777, 0777);
     rchmod("$app/bootstrap/cache", 0777, 0777);
 
-    // 5. Try artisan commands if exec() is available
+    // 5. Artisan commands (clear broken caches first, then migrate)
     if ($execOk) {
+        // Clear any broken/stale caches (fixes null view.paths and similar issues)
+        echo "Clearing caches...\n"; flush();
+        exec("php $app/artisan optimize:clear 2>&1", $out); echo implode("\n", $out) . "\n"; $out = []; flush();
+
         echo "Running artisan migrate...\n"; flush();
         exec("php $app/artisan migrate --force 2>&1", $out); echo implode("\n", $out) . "\n"; $out = []; flush();
-
-        echo "Running artisan optimize...\n"; flush();
-        exec("php $app/artisan config:cache 2>&1", $out); echo implode("\n", $out) . "\n"; $out = []; flush();
-        exec("php $app/artisan route:cache 2>&1",  $out); echo implode("\n", $out) . "\n"; $out = []; flush();
-        exec("php $app/artisan view:cache 2>&1",   $out); echo implode("\n", $out) . "\n"; $out = []; flush();
     } else {
-        echo "exec() not available - skipping artisan commands (app will still work)\n"; flush();
+        // Manually delete cache files if exec() is not available
+        echo "exec() not available - clearing cache files manually...\n"; flush();
+        @unlink("$app/bootstrap/cache/config.php");
+        @unlink("$app/bootstrap/cache/routes-v7.php");
+        @unlink("$app/bootstrap/cache/services.php");
+        @unlink("$app/bootstrap/cache/packages.php");
+        foreach (glob("$app/storage/framework/views/*.php") ?: [] as $f) @unlink($f);
+        echo "Cache files cleared\n"; flush();
     }
 
     // 6. Sync public_html (preserve directory, clear contents)

@@ -79,7 +79,7 @@ jobs:
         # Run the deploy script via HTTP
         echo "=== Running deploy script ==="
         sleep 3
-        RESULT=$(curl -sk --max-time 120 "https://cheapsmm.fun/deploy.php?t=${DEPLOY_TOKEN}")
+        RESULT=$(curl -sk --max-time 300 "https://cheapsmm.fun/deploy.php?t=${DEPLOY_TOKEN}")
         echo "$RESULT"
 
         # Check for success marker
