@@ -79,8 +79,25 @@ jobs:
         # Run the deploy script via HTTP
         echo "=== Running deploy script ==="
         sleep 3
-        RESULT=$(curl -sk --max-time 300 "https://cheapsmm.fun/deploy.php?t=${DEPLOY_TOKEN}")
+
+        # -L follows redirects (www. redirect etc), -w shows HTTP status
+        HTTP_CODE=$(curl -skL --max-time 300 \
+          -o /tmp/deploy_result.txt \
+          -w "%{http_code}" \
+          "https://cheapsmm.fun/deploy.php?t=${DEPLOY_TOKEN}")
+        RESULT=$(cat /tmp/deploy_result.txt)
+        echo "HTTP status: $HTTP_CODE"
         echo "$RESULT"
+
+        # If HTTP response was empty, try to read the log file via cPanel
+        if [ -z "$RESULT" ]; then
+          echo "=== HTTP response empty - reading deploy.log via cPanel ==="
+          RESULT=$(curl -sk \
+            -u "${SSH_USERNAME}:${CPANEL_PASSWORD}" \
+            "https://${SSH_HOST}:2083/execute/Fileman/get_file_content?dir=/home/${SSH_USERNAME}/&file=deploy.log" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('content','(log empty)'))" 2>/dev/null || echo "(could not read log)")
+          echo "$RESULT"
+        fi
 
         # Check for success marker
         if echo "$RESULT" | grep -q "Deployment complete"; then
